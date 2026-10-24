@@ -1,0 +1,5 @@
+PASS unit=1, input registers=[369, 700], temperature=36.9 C
+PASS unit=1, RPM write/readback=150
+PASS unit=2, input registers=[74, 111, 0], temperature=7.4 C
+PASS unit=3, input registers=[369, 700], temperature=36.9 C
+PASS unit=3, RPM write/readback=150

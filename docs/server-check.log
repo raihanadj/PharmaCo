@@ -1,0 +1,8 @@
+Ready: Bioreactor1 unit 1 + Chiller1 unit 2 at 127.0.0.1:5020; Bioreactor2 unit 3 at 127.0.0.1:5022
+[18:38:07] Temperature=36.9 C (raw=369, address=30001) | pH=7.00 (raw=700, address=30002) | Heater=OFF | HighTempAlarm=OFF | RPM Setpoint=100
+>> Heater changed to OFF
+>> High-temperature alarm CLEARED
+[18:38:07] CHILLER | Running=OFF | Supply=7.4 C | Return=11.1 C | Flow=0 L/min | Setpoint=7.0 C | LowFlowAlarm=OFF
+[18:38:07] Temperature=36.9 C (raw=369, address=30001) | pH=7.00 (raw=700, address=30002) | Heater=OFF | HighTempAlarm=OFF | RPM Setpoint=100
+>> Heater changed to OFF
+>> High-temperature alarm CLEARED

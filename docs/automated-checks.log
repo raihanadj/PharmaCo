@@ -1,0 +1,11 @@
+test_alarm_transition_logging (test_registers.RegisterTests.test_alarm_transition_logging) ... ok
+test_chiller_run_stop_and_setpoint_clamp (test_registers.RegisterTests.test_chiller_run_stop_and_setpoint_clamp) ... ok
+test_device_isolation (test_registers.RegisterTests.test_device_isolation) ... ok
+test_rpm_write_persists_and_is_logged (test_registers.RegisterTests.test_rpm_write_persists_and_is_logged) ... ok
+test_scaling (test_registers.RegisterTests.test_scaling) ... ok
+test_thresholds_and_boundaries (test_registers.RegisterTests.test_thresholds_and_boundaries) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
