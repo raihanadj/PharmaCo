@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 ASSETS = {'Bioreactor1': (5020, 1), 'Bioreactor2': (5022, 3), 'Chiller1': (5020, 2)}
 FIELDS = {
@@ -136,7 +137,26 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(Path(__file__).resolve().parents[1] / 'dashboard'), **kwargs)
 
     def do_GET(self):
-        if self.path.split('?')[0] == '/api/snapshot':
+        if self.path.split('?')[0] == '/api/history':
+            from snowflake_history import history
+            args = parse_qs(urlsplit(self.path).query)
+            try:
+                hours = int(args.get('hours', ['24'])[0])
+                if hours not in (1, 6, 24, 168):
+                    raise ValueError('Invalid hours')
+                result = history(hours=hours)
+            except ValueError:
+                self.send_error(400, 'Invalid hours'); return
+            except Exception:
+                result = {'status': 'connection_error', 'rows': [], 'message': 'Snowflake query failed; check local bridge logs and credentials.'}
+            body = json.dumps(result, default=str).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path.split('?')[0] == '/api/snapshot':
             body = json.dumps(self.state.snapshot(), allow_nan=False).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
