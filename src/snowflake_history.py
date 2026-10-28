@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 TABLE = "PHARMA_DATA.PRODUCTION.BIOREACTOR_DATA"
 TIMES = ("TIMESTAMP", "EVENT_TIME", "TIME", "TS", "CREATED_AT")
 ASSETS = ("BIOREACTOR1", "ASSET", "ASSET_NAME", "DEVICE")
-METRICS = ("TEMPERATURE", "PH", "RPMSETPOINT", "HEATERON", "HIGHTEMPALARM")
+METRICS = {"TEMPERATURE": "Temperature", "PH": "PH", "RPMSETPOINT": "RpmSetpoint", "RPM_SETPOINT": "RpmSetpoint", "RPM": "RpmSetpoint", "HEATERON": "HeaterOn", "HEATER_ON": "HeaterOn", "HIGHTEMPALARM": "HighTempAlarm", "HIGH_TEMP_ALARM": "HighTempAlarm"}
 
 def history(hours=24, limit=500):
     """Server-side Snowflake query; never expose connection credentials."""
@@ -47,6 +47,6 @@ def history(hours=24, limit=500):
                     when = when.isoformat()
                 row = {"time": str(when), "asset": str(item.pop(asset)) if asset else "Bioreactor1"}
                 for key, value in item.items():
-                    row[key] = value
+                    row[METRICS.get(key.upper(), key)] = value
                 result.append(row)
             return {"status": "ok", "table": TABLE, "rows": result[::-1], "count": len(result)}
