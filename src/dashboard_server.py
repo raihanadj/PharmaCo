@@ -55,6 +55,36 @@ class State:
             self.errors.pop(asset, None)
             self.messages += 1
 
+    def set_snowflake_rows(self, rows):
+        """Use source timestamps, not polling time, for freshness."""
+        import datetime
+        with self.lock:
+            counts = 0
+            for asset in ASSETS:
+                selected = []
+                for row in rows:
+                    if str(row.get('asset', '')).lower() != asset.lower():
+                        continue
+                    try:
+                        raw = {k: row[k] for k in FIELDS[asset] if k in row}
+                        if len(raw) != len(FIELDS[asset]):
+                            continue
+                        values = normalize(asset, raw)
+                        t = datetime.datetime.fromisoformat(str(row['time']).replace('Z', '+00:00'))
+                        if t.tzinfo is None:
+                            t = t.replace(tzinfo=datetime.timezone.utc)
+                        selected.append({'time': t.timestamp() * 1000, **values})
+                    except (KeyError, ValueError, TypeError, OverflowError):
+                        continue
+                selected.sort(key=lambda r: r['time'])
+                self.history[asset] = deque(selected[-600:], maxlen=600)
+                if selected:
+                    self.errors.pop(asset, None)
+                    counts += len(selected)
+                else:
+                    self.errors[asset] = 'No complete Snowflake records found for this asset.'
+            self.messages = counts
+
     def error(self, asset, message):
         with self.lock:
             self.errors[asset] = message
@@ -131,6 +161,25 @@ def mqtt_start(state):
     return client
 
 
+def snowflake_loop(state, stop):
+    """Bounded 10-second poll; failures keep old readings stale."""
+    from snowflake_history import history
+    def run():
+        while not stop.is_set():
+            try:
+                result = history(hours=1, limit=500)
+                if result.get('status') == 'ok':
+                    state.set_snowflake_rows(result['rows'])
+                else:
+                    for asset in ASSETS:
+                        state.error(asset, result.get('message', 'Snowflake unavailable'))
+            except Exception:
+                for asset in ASSETS:
+                    state.error(asset, 'Snowflake query failed; inspect local credentials and schema.')
+            stop.wait(10)
+    threading.Thread(target=run, daemon=True).start()
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, state, **kwargs):
         self.state = state
@@ -175,7 +224,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', choices=['modbus', 'mqtt'], default='modbus')
+    parser.add_argument('--source', choices=['modbus', 'mqtt', 'snowflake'], default='modbus')
     parser.add_argument('--with-simulator', action='store_true', help='Start existing simulators too; do not use if already running')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8050)
@@ -189,8 +238,10 @@ def main():
             process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('run_simulators.py'))])
         if args.source == 'modbus':
             modbus_loop(state, stop)
-        else:
+        elif args.source == 'mqtt':
             mqtt_client = mqtt_start(state)
+        else:
+            snowflake_loop(state, stop)
         print(f'Dashboard: http://{args.host}:{args.port} | source: {args.source}', flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
