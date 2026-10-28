@@ -34,3 +34,17 @@ Start your existing simulators in another terminal, or pass `--with-simulator` i
 - The dashboard displays up to 500 latest rows for the chosen time window, not the entire table.
 - No browser or JavaScript code contains credentials. Do not put private keys or passwords in GitHub, screenshots, or shared CSVs.
 - This has not been tested against the user's live Snowflake account; first test connection and schema with safe read-only privileges.
+
+## Near-real-time Snowflake mode
+
+Use this mode to display new Snowflake rows on the existing overview cards and charts, without a separate historical-table refresh:
+
+```powershell
+.\.venv\Scripts\python.exe src/dashboard_server.py --source snowflake
+```
+
+Restart the bridge if it is already running on port 8050. No simulator process is started by this command; keep the simulator and HighByte Snowflake output running independently. The backend polls the last hour of Snowflake records every 10 seconds (maximum 500 rows per query), and the browser fetches the snapshot every 5 seconds. Freshness is derived from row timestamps, and readings older than 30 seconds are stale. This is near-real-time polling, not Snowflake change streaming. Continuous queries may incur warehouse usage charges.
+
+**Important schema prerequisites:** Each row must have a recognized timestamp, asset name (or it will be treated as Bioreactor1), and complete Bioreactor fields Temperature, PH, RpmSetpoint, HeaterOn, HighTempAlarm. Chiller requires separate named metrics and matching adapter mappings and is not supported by the current Snowflake adapter. Inspect DESCRIBE TABLE and adjust aliases as needed. Verify event timestamps are in UTC when Snowflake columns are timezone-less.
+
+**Quick check:** open http://127.0.0.1:8050/api/snapshot and verify `source` is `snowflake`, then compare displayed times and values against `SELECT * FROM PHARMA_DATA.PRODUCTION.BIOREACTOR_DATA ORDER BY TIMESTAMP DESC LIMIT 5` (replace timestamp identifier if necessary). If no records appear, inspect permissions, the timestamp column, source data quality and whether HighByte is continuing to ingest. Stop the bridge before switching to Modbus or MQTT mode.
