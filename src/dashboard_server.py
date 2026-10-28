@@ -11,7 +11,6 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.parse import parse_qs, urlsplit
 
 ASSETS = {'Bioreactor1': (5020, 1), 'Bioreactor2': (5022, 3), 'Chiller1': (5020, 2)}
 FIELDS = {
@@ -54,33 +53,6 @@ class State:
             self.history[asset].append({'time': time.time() * 1000, **values})
             self.errors.pop(asset, None)
             self.messages += 1
-
-    def set_snowflake_rows(self, rows):
-        """Only newly observed Snowflake records advance the dashboard clock."""
-        seen = getattr(self, '_snowflake_seen', set())
-        new_seen = set()
-        for row in rows:
-            asset = str(row.get('asset', '')).strip()
-            if asset not in ('Bioreactor1', 'Bioreactor2'):
-                continue
-            fingerprint = (asset, str(row.get('time')), row.get('Temperature'),
-                           row.get('PH'), row.get('RpmSetpoint'),
-                           row.get('HeaterOn'), row.get('HighTempAlarm'))
-            new_seen.add(fingerprint)
-            if fingerprint in seen:
-                continue
-            if not hasattr(self, '_snowflake_seen'):
-                continue  # Initial snapshot is a baseline; not evidence of live flow.
-            try:
-                self.add(asset, {key: row[key] for key in FIELDS[asset]})
-            except (ValueError, TypeError, KeyError):
-                self.error(asset, 'Snowflake record is missing a required measurement.')
-        self._snowflake_seen = new_seen
-        if not seen:
-            for asset in ('Bioreactor1', 'Bioreactor2'):
-                if not self.history[asset]:
-                    self.error(asset, 'Waiting for newly ingested Snowflake records.')
-        self.error('Chiller1', 'No Snowflake chiller table connected; use Modbus/MQTT for Chiller1.')
 
     def error(self, asset, message):
         with self.lock:
@@ -158,51 +130,13 @@ def mqtt_start(state):
     return client
 
 
-def snowflake_loop(state, stop):
-    """Bounded 10-second poll; failures keep old readings stale."""
-    from snowflake_history import history
-    def run():
-        while not stop.is_set():
-            try:
-                result = history(hours=1, limit=500)
-                if result.get('status') == 'ok':
-                    state.set_snowflake_rows(result['rows'])
-                else:
-                    for asset in ASSETS:
-                        state.error(asset, result.get('message', 'Snowflake unavailable'))
-            except Exception:
-                for asset in ASSETS:
-                    state.error(asset, 'Snowflake query failed; inspect local credentials and schema.')
-            stop.wait(10)
-    threading.Thread(target=run, daemon=True).start()
-
-
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, state, **kwargs):
         self.state = state
         super().__init__(*args, directory=str(Path(__file__).resolve().parents[1] / 'dashboard'), **kwargs)
 
     def do_GET(self):
-        if self.path.split('?')[0] == '/api/history':
-            from snowflake_history import history
-            args = parse_qs(urlsplit(self.path).query)
-            try:
-                hours = int(args.get('hours', ['24'])[0])
-                if hours not in (1, 6, 24, 168):
-                    raise ValueError('Invalid hours')
-                result = history(hours=hours)
-            except ValueError:
-                self.send_error(400, 'Invalid hours'); return
-            except Exception:
-                result = {'status': 'connection_error', 'rows': [], 'message': 'Snowflake query failed; check local bridge logs and credentials.'}
-            body = json.dumps(result, default=str).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Cache-Control', 'no-store')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path.split('?')[0] == '/api/snapshot':
+        if self.path.split('?')[0] == '/api/snapshot':
             body = json.dumps(self.state.snapshot(), allow_nan=False).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -221,7 +155,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', choices=['modbus', 'mqtt', 'snowflake'], default='modbus')
+    parser.add_argument('--source', choices=['modbus', 'mqtt'], default='modbus')
     parser.add_argument('--with-simulator', action='store_true', help='Start existing simulators too; do not use if already running')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8050)
@@ -235,10 +169,8 @@ def main():
             process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('run_simulators.py'))])
         if args.source == 'modbus':
             modbus_loop(state, stop)
-        elif args.source == 'mqtt':
-            mqtt_client = mqtt_start(state)
         else:
-            snowflake_loop(state, stop)
+            mqtt_client = mqtt_start(state)
         print(f'Dashboard: http://{args.host}:{args.port} | source: {args.source}', flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
