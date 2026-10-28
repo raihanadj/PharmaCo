@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 TABLE = "PHARMA_DATA.PRODUCTION.BIOREACTOR_DATA"
 TIMES = ("TIMESTAMP", "EVENT_TIME", "TIME", "TS", "CREATED_AT")
-ASSETS = ("BIOREACTOR1", "ASSET", "ASSET_NAME", "DEVICE")
+ASSETS = ("BIOREACTOR_ID", "BIOREACTOR1", "ASSET", "ASSET_NAME", "DEVICE")
 METRICS = {"TEMPERATURE": "Temperature", "PH": "PH", "RPMSETPOINT": "RpmSetpoint", "RPM_SETPOINT": "RpmSetpoint", "RPM": "RpmSetpoint", "HEATERON": "HeaterOn", "HEATER_ON": "HeaterOn", "HIGHTEMPALARM": "HighTempAlarm", "HIGH_TEMP_ALARM": "HighTempAlarm"}
 
 def history(hours=24, limit=500):
@@ -34,9 +34,8 @@ def history(hours=24, limit=500):
                 return '"' + name.replace('"', '""') + '"'
             wanted = [t] + ([asset] if asset else []) + [columns[c] for c in METRICS if c in columns]
             query = "SELECT " + ", ".join(quote(c) for c in wanted) + " FROM " + TABLE
-            query += " WHERE " + quote(t) + " >= DATEADD(hour, -%s, CURRENT_TIMESTAMP())"
             query += " ORDER BY " + quote(t) + " DESC LIMIT %s"
-            cursor.execute(query, (int(hours), int(limit)))
+            cursor.execute(query, (int(limit),))
             result = []
             for values in cursor.fetchall():
                 item = dict(zip(wanted, values))
