@@ -39,3 +39,24 @@ $('live').onclick=()=>connect();$('closeDialog').onclick=()=>$('connectionDialog
 document.querySelectorAll('[data-asset]').forEach(b=>b.onclick=()=>{asset=b.dataset.asset;freshness='';document.querySelectorAll('[data-asset]').forEach(x=>x.classList.toggle('selected',x===b));render();});$('window').onchange=render;
 $('export').onclick=()=>{const rows=data.assets[asset]||[];if(!rows.length){log('No samples to export · start a data source first');return;}const keys=Object.keys(rows[0]),csv=[['source',...keys].join(','),...rows.map(r=>[mode==='demo'?'browser-demo':data.source,...keys.map(k=>k==='time'?new Date(r[k]).toISOString():r[k])].join(','))].join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download=`PharmaCo-${asset}-${mode}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);log('Exported '+rows.length+' samples for '+names[asset]);};
 setInterval(render,1000);render();connect(true);
+
+async function refreshHistory(){
+ const status=$('historyStatus'), body=$('historyBody');
+ status.textContent='Loading historical records…';
+ try{
+   const response=await fetch('/api/history?hours='+encodeURIComponent($('historyHours').value),{cache:'no-store',signal:AbortSignal.timeout(20000)});
+   if(!response.ok)throw new Error('HTTP '+response.status);
+   const result=await response.json();
+   body.replaceChildren();
+   if(result.status!=='ok'){status.textContent=result.message||'Snowflake history unavailable ('+result.status+')';return;}
+   status.textContent=result.count+' records loaded from Snowflake (read-only).';
+   for(const record of result.rows){
+     const row=document.createElement('tr');
+     const get=(...names)=>{for(const n of names){const key=Object.keys(record).find(k=>k.toUpperCase()===n.toUpperCase());if(key!==undefined)return record[key];}return '—';};
+     const cells=[record.time,record.asset,get('Temperature'),get('PH'),get('RpmSetpoint'),get('HeaterOn'),get('HighTempAlarm')];
+     for(const value of cells){const td=document.createElement('td');td.textContent=String(value??'—');td.style.padding='8px 10px';td.style.borderBottom='1px solid #e3eae5';row.append(td);}
+     body.append(row);
+   }
+ }catch(error){status.textContent='Could not load history. Check the local bridge and Snowflake connection.';}
+}
+$('historyRefresh').onclick=refreshHistory;
