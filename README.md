@@ -30,6 +30,17 @@ The live check prints PASS lines and temporarily writes RPM=150, restoring the o
 
 Settings are environment variables, listed in `.env.example`; this file is a reference and is not loaded automatically. For example `$env:SIM_HOST="0.0.0.0"` enables connections from other machines. Default binding is localhost. In combined mode CHILLER_PORT must equal BIOREACTOR1_PORT. No MQTT credentials are needed to run Python.
 
+## Live dashboard
+
+The optional process dashboard shows all three assets, live trends, alarm events and CSV export.
+
+```sh
+python -m pip install -r requirements-dashboard.txt
+python src/dashboard_server.py --with-simulator
+```
+
+Open **http://127.0.0.1:8050**. Omit `--with-simulator` if the simulators are already running. Use `--source mqtt` for the HighByte/HiveMQ pipeline. See [dashboard setup and payload schema](docs/dashboard.md). The static website also has a clearly labelled browser demo; that mode does not connect to real devices.
+
 ## Register map
 Addresses in code and the test client are zero-based; reference labels below are the conventional human-readable notation.
 
