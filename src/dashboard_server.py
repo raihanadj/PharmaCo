@@ -56,34 +56,31 @@ class State:
             self.messages += 1
 
     def set_snowflake_rows(self, rows):
-        """Use source timestamps, not polling time, for freshness."""
-        import datetime
-        with self.lock:
-            counts = 0
-            for asset in ASSETS:
-                selected = []
-                for row in rows:
-                    if str(row.get('asset', '')).lower() != asset.lower():
-                        continue
-                    try:
-                        raw = {k: row[k] for k in FIELDS[asset] if k in row}
-                        if len(raw) != len(FIELDS[asset]):
-                            continue
-                        values = normalize(asset, raw)
-                        t = datetime.datetime.fromisoformat(str(row['time']).replace('Z', '+00:00'))
-                        if t.tzinfo is None:
-                            t = t.replace(tzinfo=datetime.timezone.utc)
-                        selected.append({'time': t.timestamp() * 1000, **values})
-                    except (KeyError, ValueError, TypeError, OverflowError):
-                        continue
-                selected.sort(key=lambda r: r['time'])
-                self.history[asset] = deque(selected[-600:], maxlen=600)
-                if selected:
-                    self.errors.pop(asset, None)
-                    counts += len(selected)
-                else:
-                    self.errors[asset] = 'No complete Snowflake records found for this asset.'
-            self.messages = counts
+        """Only newly observed Snowflake records advance the dashboard clock."""
+        seen = getattr(self, '_snowflake_seen', set())
+        new_seen = set()
+        for row in rows:
+            asset = str(row.get('asset', '')).strip()
+            if asset not in ('Bioreactor1', 'Bioreactor2'):
+                continue
+            fingerprint = (asset, str(row.get('time')), row.get('Temperature'),
+                           row.get('PH'), row.get('RpmSetpoint'),
+                           row.get('HeaterOn'), row.get('HighTempAlarm'))
+            new_seen.add(fingerprint)
+            if fingerprint in seen:
+                continue
+            if not hasattr(self, '_snowflake_seen'):
+                continue  # Initial snapshot is a baseline; not evidence of live flow.
+            try:
+                self.add(asset, {key: row[key] for key in FIELDS[asset]})
+            except (ValueError, TypeError, KeyError):
+                self.error(asset, 'Snowflake record is missing a required measurement.')
+        self._snowflake_seen = new_seen
+        if not seen:
+            for asset in ('Bioreactor1', 'Bioreactor2'):
+                if not self.history[asset]:
+                    self.error(asset, 'Waiting for newly ingested Snowflake records.')
+        self.error('Chiller1', 'No Snowflake chiller table connected; use Modbus/MQTT for Chiller1.')
 
     def error(self, asset, message):
         with self.lock:
